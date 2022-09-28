@@ -1,4 +1,3 @@
-//IMPORTS
 import React, { useEffect, useState } from "react";
 import { Connection, PublicKey, clusterApiUrl } from "@solana/web3.js";
 import { Program, Provider, web3 } from "@project-serum/anchor";
@@ -7,32 +6,26 @@ import "./App.css";
 import idl from "./idl.json";
 import kp from "./keypair.json";
 
-//CONSTANTS
 const { SystemProgram, Keypair } = web3;
 const arr = Object.values(kp._keypair.secretKey);
 const secret = new Uint8Array(arr);
 const baseAccount = web3.Keypair.fromSecretKey(secret);
-const programID = new PublicKey("yourprogramidhere");
+const programID = new PublicKey("B85YcqVUBMK1Ba7K2jg7xmwXadJEMrRD6NKEXUdokeYc");
 const network = clusterApiUrl("devnet");
 const opts = {
   preflightCommitment: "processed",
 };
 
 const App = () => {
-  //useSTATE
   const [walletAddress, setWalletAddress] = useState(null);
   const [inputValue, setInputValue] = useState("");
   const [gifList, setGifList] = useState([]);
-
-  //TOASTS
 
   const showPhantomToast = () =>
     toast("To sign in, download a Phantom Wallet 👻 at https://phantom.app");
   const showConnectedWalletToast = () => toast.success("You're signed in!");
   const showDisconnectedWalletToast = () => toast.success("You've signed out!");
   const showGifSentToast = () => toast.success("GIF Sent!");
-
-  //ACTIONS
 
   const checkIfWalletIsConnected = async () => {
     try {
@@ -84,21 +77,6 @@ const App = () => {
     return new Program(idl, programID, getProvider());
   };
 
-  const getGifList = async () => {
-    try {
-      const program = await getProgram();
-      const account = await program.account.baseAccount.fetch(
-        baseAccount.publicKey
-      );
-
-      console.log("Got the account", account);
-      setGifList(account.gifList);
-    } catch (error) {
-      console.log("Error in getGifList: ", error);
-      setGifList(null);
-    }
-  };
-
   const getProvider = () => {
     const connection = new Connection(network, opts.preflightCommitment);
     const provider = new Provider(
@@ -112,8 +90,7 @@ const App = () => {
   const createGifAccount = async () => {
     try {
       const provider = getProvider();
-      const program = await getProgram();
-
+      const program = new Program(idl, programID, provider);
       console.log("ping");
       await program.rpc.startStuffOff({
         accounts: {
@@ -133,14 +110,49 @@ const App = () => {
     }
   };
 
+  const shortenAddress = (address) => {
+    if (!address) return "";
+    return address.substring(0, 4) + "....." + address.substring(40);
+  };
+
+  const getGifList = async () => {
+    try {
+      const program = await getProgram();
+      const account = await program.account.baseAccount.fetch(
+        baseAccount.publicKey
+      );
+
+      console.log("Got the account", account);
+      setGifList(account.gifList);
+    } catch (error) {
+      console.log("Error in getGifList: ", error);
+      setGifList(null);
+    }
+  };
+
   const sendGif = async () => {
-    if (inputValue.length > 0) {
-      console.log("Gif link:", inputValue);
-      setGifList([...gifList, inputValue]);
-      setInputValue("");
+    if (inputValue.length === 0) {
+      console.log("No gif link given!");
+      return;
+    }
+    setInputValue("");
+    console.log("Gif link:", inputValue);
+    try {
+      const provider = getProvider();
+      const program = new Program(idl, programID, provider);
+
+      await program.rpc.addGif(inputValue, {
+        accounts: {
+          baseAccount: baseAccount.publicKey,
+          user: provider.wallet.publicKey,
+        },
+      });
+      console.log("GIF successfully sent to program", inputValue);
+
+      await getGifList();
       showGifSentToast();
-    } else {
-      console.log("Empty input. Try again.");
+    } catch (error) {
+      console.log("Error sending GIF:", error);
     }
   };
 
@@ -160,7 +172,6 @@ const App = () => {
   );
 
   const renderConnectedContainer = () => {
-    // If we hit this, it means the program account hasn't been initialized.
     if (gifList === null) {
       return (
         <div className="connected-container">
@@ -172,9 +183,7 @@ const App = () => {
           </button>
         </div>
       );
-    }
-    // Otherwise, we're good! Account exists. User can submit GIFs.
-    else {
+    } else {
       return (
         <div className="connected-container">
           <p className="connected-header">SCENE PORTAL</p>
@@ -182,7 +191,7 @@ const App = () => {
             className="cta-button disconnect-wallet-button"
             onClick={disconnectWallet}
           >
-            SIGN OUT
+            SIGN OUT {shortenAddress(walletAddress)}
           </button>
           <form
             className="form"
@@ -198,11 +207,10 @@ const App = () => {
               onChange={onInputChange}
             />
             <button type="submit" className="cta-button submit-gif-button">
-              Submit
+              SUBMIT
             </button>
           </form>
           <div className="gif-grid">
-            {/* We use index as the key instead, also, the src is now item.gifLink */}
             {gifList.map((item, index) => (
               <div className="gif-item" key={index}>
                 <img
@@ -210,6 +218,16 @@ const App = () => {
                   src={item.gifLink}
                   alt={item.gifLink}
                 />
+                <div className="address-tag">
+                  <img
+                    className="phantom-image"
+                    src="https://res.cloudinary.com/crunchbase-production/image/upload/c_lpad,f_auto,q_auto:eco,dpr_1/sqzgmbkggvc1uwgapeuy"
+                    alt="Phantom Wallet"
+                  />
+                  <p className="address">
+                    @{shortenAddress(item.userAddress.toString())}
+                  </p>
+                </div>
               </div>
             ))}
           </div>
@@ -217,8 +235,6 @@ const App = () => {
       );
     }
   };
-
-  //useEFFECTS
 
   useEffect(() => {
     const onLoad = async () => {
@@ -231,6 +247,8 @@ const App = () => {
   useEffect(() => {
     if (walletAddress) {
       console.log("Fetching GIF list...");
+
+      // Call Solana program here.
       getGifList();
     }
   }, [walletAddress]);
